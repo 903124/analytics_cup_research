@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Soccer Ball Physics Simulator - Full Squads</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      overflow: hidden;
+      background: #1a1a2e;
+    }
+    #container {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    #controls {
+      background: #2d2d44;
+      padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      max-height: 40vh;
+      overflow-y: auto;
+    }
+    .controls-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .control-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+    .btn-group {
+      display: flex;
+      gap: 8px;
+    }
+    button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 14px;
+    }
+    .view-btn {
+      background: #3d3d5c;
+      color: #a0a0b8;
+    }
+    .view-btn:hover {
+      background: #4d4d6c;
+    }
+    .view-btn.active {
+      background: #2563eb;
+      color: white;
+    }
+    .clear-btn {
+      background: #dc2626;
+      color: white;
+    }
+    .clear-btn:hover {
+      background: #b91c1c;
+    }
+    .slider-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    label {
+      color: white;
+      font-size: 14px;
+      min-width: 90px;
+    }
+    input[type="range"] {
+      width: 120px;
+      cursor: pointer;
+    }
+    .value {
+      color: white;
+      font-size: 14px;
+      min-width: 50px;
+      text-align: right;
+      font-family: monospace;
+    }
+    #canvas-container {
+      flex: 1;
+      position: relative;
+    }
+    .section-title {
+      color: #a0a0b8;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+    /* Cursor helper */
+    canvas {
+      cursor: grab;
+    }
+    canvas:active {
+      cursor: grabbing;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="controls">
+      <div class="controls-inner">
+        <div class="control-row">
+          <div class="btn-group">
+            <button class="view-btn active" data-view="third">3rd Person</button>
+            <button class="view-btn" data-view="first">1st Person</button>
+          </div>
+          <button class="clear-btn" id="clear-btn">Clear Trajectory</button>
+        </div>
+        
+        <div class="section-title">Ball Position (meters)</div>
+        <div class="control-row">
+          <div class="slider-group">
+            <label>X Position:</label>
+            <input type="range" id="x-slider" min="-52.5" max="52.5" value="0" step="0.5">
+            <span class="value" id="x-value">0.0</span>
+          </div>
+          
+          <div class="slider-group">
+            <label>Y Position:</label>
+            <input type="range" id="y-slider" min="-34" max="34" value="0" step="0.5">
+            <span class="value" id="y-value">0.0</span>
+          </div>
+
+          <div class="slider-group">
+            <label>Z Position:</label>
+            <input type="range" id="z-slider" min="0" max="10" step="0.1" value="0.35">
+            <span class="value" id="z-value">0.4</span>
+          </div>
+        </div>
+        
+        <div class="section-title">Kick Parameters</div>
+        <div class="control-row">
+          <div class="slider-group">
+            <label>Speed (km/h):</label>
+            <input type="range" id="speed-slider" min="0" max="140" value="90" step="1">
+            <span class="value" id="speed-value">90</span>
+          </div>
+          
+          <div class="slider-group">
+            <label>Azimuth (deg):</label>
+            <input type="range" id="azimuth-slider" min="-45" max="45" value="0" step="1">
+            <span class="value" id="azimuth-value">0</span>
+          </div>
+          
+          <div class="slider-group">
+            <label>Elevation (deg):</label>
+            <input type="range" id="elevation-slider" min="0" max="80" value="15" step="1">
+            <span class="value" id="elevation-value">15</span>
+          </div>
+        </div>
+        
+        <div class="section-title">Spin (RPM)</div>
+        <div class="control-row">
+          <div class="slider-group">
+            <label>Sidespin:</label>
+            <input type="range" id="sidespin-slider" min="-1000" max="1000" value="0" step="10">
+            <span class="value" id="sidespin-value">0</span>
+          </div>
+          
+          <div class="slider-group">
+            <label>Backspin:</label>
+            <input type="range" id="backspin-slider" min="-1000" max="1000" value="100" step="10">
+            <span class="value" id="backspin-value">100</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="canvas-container"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    const M_TO_FT = 3.28084;
+    const DRAG_MULT = 0.6;
+    
+    let scene, camera, renderer, ball, trajectoryLine, velocityArrow;
+    let viewMode = 'third';
+    let ballPos = { x: 0, y: 0, z: 0.35 };
+    
+    let kickParams = {
+        speedKmh: 90,
+        azimuth: 0,
+        elevation: 15
+    };
+    
+    let velocity = { vx: 0, vy: 0, vz: 0 };
+    let spins = { sidespin: 0, backspin: 100 };
+    let trajectoryPoints = [];
+    
+    // Interaction Variables
+    let isCameraDragging = false;
+    let isPlayerDragging = false;
+    let selectedPlayer = null;
+    let previousMousePosition = { x: 0, y: 0 };
+    let cameraRotation = { theta: 0, phi: Math.PI / 6 };
+    let cameraDistance = 70;
+    
+    // Raycasting for dragging players
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const draggablePlayers = [];
+
+    class SoccerPhysics {
+      constructor() {
+        this.mass_oz = 15.0;
+        this.circumference_in = 27.0;
+        this.g = 32.174;
+        
+        this.Temp_F = 78;
+        this.elev_ft = 0;
+        this.relative_humidity = 50;
+        this.barometric_pressure = 29.92;
+        
+        const Temp_C = (5/9) * (this.Temp_F - 32);
+        const beta = 0.0001217;
+        const SVP = 4.5841 * Math.exp((18.687 - Temp_C / 234.5) * Temp_C / (257.14 + Temp_C));
+        const barometric_pressure_mmHg = this.barometric_pressure * 1000 / 39.37;
+        const rho_kg_m3 = 1.2929 * (273 / (Temp_C + 273) * (barometric_pressure_mmHg * Math.exp(-beta * this.elev_ft) - 0.3783 * this.relative_humidity * SVP / 100) / 760);
+        this.rho_lb_ft3 = rho_kg_m3 * 0.06261;
+        
+        this.base_c0 = 0.07182 * this.rho_lb_ft3 * (5.125 / this.mass_oz) * Math.pow(this.circumference_in / 9.125, 2);
+      }
+
+      getDerivatives(t, state, dragMult, sidespin, backspin) {
+        const [x, y, z, vx, vy, vz] = state;
+        
+        const v = Math.sqrt(vx*vx + vy*vy + vz*vz);
+        if (v === 0) return [vx, vy, vz, 0, 0, 0];
+        
+        const omega_side = sidespin * (2 * Math.PI) / 60;
+        const omega_back = backspin * (2 * Math.PI) / 60;
+        
+        const wx = -omega_back;
+        const wy = 0;
+        const wz = omega_side;
+        const omega = Math.sqrt(wx*wx + wy*wy + wz*wz);
+        
+        let S, Cl, Cd;
+        if (omega === 0) {
+          S = 0;
+          Cl = 0;
+          Cd = 0.4105 * dragMult;
+        } else {
+          const romega = (this.circumference_in / 2 / Math.PI) * omega / 12;
+          const tau = 25;
+          S = (romega / v) * Math.exp(-t / (tau * 146.7 / v));
+          Cd = (0.4105 * (1 + 0.2017 * S * S)) * dragMult;
+          Cl = 1 / (2.32 + 0.4 / S);
+        }
+        
+        const constMag = omega > 0 ? this.base_c0 * (Cl / omega) * v : 0;
+        
+        const aMagx = omega > 0 ? constMag * (wy*vz - wz*vy) : 0;
+        const aMagy = omega > 0 ? constMag * (wz*vx - wx*vz) : 0;
+        const aMagz = omega > 0 ? constMag * (wx*vy - wy*vx) : 0;
+        
+        const drag_const = -this.base_c0 * Cd * v;
+        const ax = drag_const * vx + aMagx;
+        const ay = drag_const * vy + aMagy;
+        const az = drag_const * vz + aMagz - this.g;
+        
+        return [vx, vy, vz, ax, ay, az];
+      }
+
+      simulate(x0, y0, z0, vx0, vy0, vz0, sidespin, backspin, dragMult) {
+        const x0_ft = y0 * M_TO_FT;
+        const y0_ft = x0 * M_TO_FT;
+        const z0_ft = z0 * M_TO_FT;
+        const vx0_ft = vy0 * M_TO_FT;
+        const vy0_ft = vx0 * M_TO_FT;
+        const vz0_ft = vz0 * M_TO_FT;
+        
+        let state = [x0_ft, y0_ft, z0_ft, vx0_ft, vy0_ft, vz0_ft];
+        
+        const dt = 0.01;
+        const maxT = 10.0;
+        const trajectory = [[state[1] / M_TO_FT, state[0] / M_TO_FT, state[2] / M_TO_FT]];
+        
+        let t = 0;
+        while (t < maxT) {
+          const k1 = this.getDerivatives(t, state, dragMult, sidespin, backspin);
+          const k2 = this.getDerivatives(t + dt/2, state.map((s, i) => s + k1[i]*dt/2), dragMult, sidespin, backspin);
+          const k3 = this.getDerivatives(t + dt/2, state.map((s, i) => s + k2[i]*dt/2), dragMult, sidespin, backspin);
+          const k4 = this.getDerivatives(t + dt, state.map((s, i) => s + k3[i]*dt), dragMult, sidespin, backspin);
+          
+          state = state.map((s, i) => s + (dt/6) * (k1[i] + 2*k2[i] + 2*k3[i] + k4[i]));
+          t += dt;
+          
+          const currentZ_m = state[0] / M_TO_FT; 
+          const currentX_m = state[1] / M_TO_FT;
+          const currentH_m = state[2] / M_TO_FT;
+
+          if (t % 0.1 < dt) {
+            trajectory.push([currentX_m, currentZ_m, currentH_m]);
+          }
+
+          if (state[2] < 0) break;
+          if (Math.abs(currentX_m) > 60 || Math.abs(currentZ_m) > 38) break;
+          if (Math.abs(currentX_m) > 52.5) {
+             if (Math.abs(currentZ_m) < 3.66 && currentH_m < 2.44) {
+                 if (Math.abs(currentX_m) > 54.5) break;
+             }
+          }
+        }
+        
+        return trajectory;
+      }
+    }
+
+    const physics = new SoccerPhysics();
+
+    function init() {
+      const container = document.getElementById('canvas-container');
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x87ceeb);
+
+      camera = new THREE.PerspectiveCamera(
+        75,
+        container.clientWidth / container.clientHeight,
+        0.1,
+        1000
+      );
+      camera.position.set(0, 30, 60);
+      camera.lookAt(0, 0, 0);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      container.appendChild(renderer.domElement);
+
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      scene.add(ambientLight);
+
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      directionalLight.position.set(50, 50, 25);
+      directionalLight.castShadow = true;
+      directionalLight.shadow.mapSize.width = 2048;
+      directionalLight.shadow.mapSize.height = 2048;
+      scene.add(directionalLight);
+
+      // --- FIELD SETUP ---
+      const fieldLength = 105;
+      const fieldWidth = 68;
+
+      const fieldGeometry = new THREE.PlaneGeometry(fieldLength, fieldWidth);
+      const fieldMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x2d5016, 
+        side: THREE.DoubleSide 
+      });
+      const field = new THREE.Mesh(fieldGeometry, fieldMaterial);
+      field.rotation.x = -Math.PI / 2;
+      field.receiveShadow = true;
+      scene.add(field);
+
+      const lineMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      
+      function createLine(width, height, x, y, z) {
+        const geo = new THREE.PlaneGeometry(width, height);
+        const line = new THREE.Mesh(geo, lineMaterial);
+        line.rotation.x = -Math.PI / 2;
+        line.position.set(x, y, z);
+        return line;
+      }
+
+      scene.add(createLine(fieldLength, 0.3, 0, 0.01, -fieldWidth/2));
+      scene.add(createLine(fieldLength, 0.3, 0, 0.01, fieldWidth/2));
+      scene.add(createLine(0.3, fieldWidth, -fieldLength/2, 0.01, 0));
+      scene.add(createLine(0.3, fieldWidth, fieldLength/2, 0.01, 0));
+      scene.add(createLine(0.3, fieldWidth, 0, 0.01, 0));
+
+      const centerCircle = new THREE.RingGeometry(9.15, 9.45, 64);
+      const centerCircleMesh = new THREE.Mesh(centerCircle, lineMaterial);
+      centerCircleMesh.rotation.x = -Math.PI / 2;
+      centerCircleMesh.position.y = 0.01;
+      scene.add(centerCircleMesh);
+
+      const penaltyLength = 16.5;
+      const penaltyWidth = 40.3;
+      
+      scene.add(createLine(0.3, penaltyWidth, -fieldLength/2 + penaltyLength, 0.01, 0));
+      scene.add(createLine(penaltyLength, 0.3, -fieldLength/2 + penaltyLength/2, 0.01, -penaltyWidth/2));
+      scene.add(createLine(penaltyLength, 0.3, -fieldLength/2 + penaltyLength/2, 0.01, penaltyWidth/2));
+      scene.add(createLine(0.3, penaltyWidth, fieldLength/2 - penaltyLength, 0.01, 0));
+      scene.add(createLine(penaltyLength, 0.3, fieldLength/2 - penaltyLength/2, 0.01, -penaltyWidth/2));
+      scene.add(createLine(penaltyLength, 0.3, fieldLength/2 - penaltyLength/2, 0.01, penaltyWidth/2));
+
+      const goalAreaLength = 5.5;
+      const goalAreaWidth = 18.3;
+      
+      scene.add(createLine(0.3, goalAreaWidth, -fieldLength/2 + goalAreaLength, 0.01, 0));
+      scene.add(createLine(goalAreaLength, 0.3, -fieldLength/2 + goalAreaLength/2, 0.01, -goalAreaWidth/2));
+      scene.add(createLine(goalAreaLength, 0.3, -fieldLength/2 + goalAreaLength/2, 0.01, goalAreaWidth/2));
+      scene.add(createLine(0.3, goalAreaWidth, fieldLength/2 - goalAreaLength, 0.01, 0));
+      scene.add(createLine(goalAreaLength, 0.3, fieldLength/2 - goalAreaLength/2, 0.01, -goalAreaWidth/2));
+      scene.add(createLine(goalAreaLength, 0.3, fieldLength/2 - goalAreaLength/2, 0.01, goalAreaWidth/2));
+
+      function createGoal(x) {
+        const goalMaterial = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+        const postGeometry = new THREE.CylinderGeometry(0.12, 0.12, 2.44, 16);
+        const crossbarGeometry = new THREE.CylinderGeometry(0.12, 0.12, 7.32, 16);
+        
+        const leftPost = new THREE.Mesh(postGeometry, goalMaterial);
+        leftPost.position.set(x, 1.22, -3.66);
+        
+        const rightPost = new THREE.Mesh(postGeometry, goalMaterial);
+        rightPost.position.set(x, 1.22, 3.66);
+        
+        const crossbar = new THREE.Mesh(crossbarGeometry, goalMaterial);
+        crossbar.rotation.x = Math.PI / 2;
+        crossbar.position.set(x, 2.44, 0);
+        
+        scene.add(leftPost, rightPost, crossbar);
+      }
+
+      createGoal(-fieldLength/2);
+      createGoal(fieldLength/2);
+
+      // --- BALL ---
+      const ballGeometry = new THREE.SphereGeometry(0.35, 32, 32);
+      const ballMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0xffffff,
+        roughness: 0.5,
+        metalness: 0.1
+      });
+      ball = new THREE.Mesh(ballGeometry, ballMaterial);
+      ball.position.set(0, 0.35, 0);
+      ball.castShadow = true;
+      scene.add(ball);
+      
+      updateVelocityFromPolar();
+      createVelocityArrow();
+
+      // --- PLAYERS (11v11) ---
+      const playerHeight = 1.85;
+      const playerRadius = 0.3;
+      const playerGeometry = new THREE.CylinderGeometry(playerRadius, playerRadius, playerHeight, 32);
+      
+      const redMaterial = new THREE.MeshStandardMaterial({ color: 0xe63946 }); // Field Red
+      const blueMaterial = new THREE.MeshStandardMaterial({ color: 0x457b9d }); // Field Blue
+      const greenGKMaterial = new THREE.MeshStandardMaterial({ color: 0x70e000 }); // GK 1
+      const yellowGKMaterial = new THREE.MeshStandardMaterial({ color: 0xffea00 }); // GK 2
+
+      function createPlayer(x, z, material) {
+        const player = new THREE.Mesh(playerGeometry, material);
+        player.position.set(x, playerHeight / 2, z);
+        player.castShadow = true;
+        scene.add(player);
+        draggablePlayers.push(player);
+      }
+
+      // Team 1 (Red + Green GK) - Defending Left side (-X)
+      // GK
+      createPlayer(-50, 0, greenGKMaterial);
+      // Defenders (4)
+      createPlayer(-40, -15, redMaterial);
+      createPlayer(-40, -6, redMaterial);
+      createPlayer(-40, 6, redMaterial);
+      createPlayer(-40, 15, redMaterial);
+      // Midfielders (4)
+      createPlayer(-20, -18, redMaterial);
+      createPlayer(-20, -6, redMaterial);
+      createPlayer(-20, 6, redMaterial);
+      createPlayer(-20, 18, redMaterial);
+      // Forwards (2)
+      createPlayer(-2, -5, redMaterial);
+      createPlayer(-2, 5, redMaterial);
+
+      // Team 2 (Blue + Yellow GK) - Defending Right side (+X)
+      // GK
+      createPlayer(50, 0, yellowGKMaterial);
+      // Defenders (4)
+      createPlayer(40, -15, blueMaterial);
+      createPlayer(40, -6, blueMaterial);
+      createPlayer(40, 6, blueMaterial);
+      createPlayer(40, 15, blueMaterial);
+      // Midfielders (4)
+      createPlayer(20, -18, blueMaterial);
+      createPlayer(20, -6, blueMaterial);
+      createPlayer(20, 6, blueMaterial);
+      createPlayer(20, 18, blueMaterial);
+      // Forwards (2)
+      createPlayer(2, -5, blueMaterial);
+      createPlayer(2, 5, blueMaterial);
+
+      window.addEventListener('resize', onResize);
+      
+      const canvas = renderer.domElement;
+      canvas.addEventListener('mousedown', onMouseDown);
+      canvas.addEventListener('mousemove', onMouseMove);
+      canvas.addEventListener('mouseup', onMouseUp);
+      canvas.addEventListener('wheel', onMouseWheel);
+      
+      simulateTrajectory();
+    }
+    
+    function updateVelocityFromPolar() {
+      const speedMs = kickParams.speedKmh / 3.6;
+      const azRad = kickParams.azimuth * (Math.PI / 180);
+      const elRad = kickParams.elevation * (Math.PI / 180);
+      
+      velocity.vz = speedMs * Math.sin(elRad);
+      
+      const vHoriz = speedMs * Math.cos(elRad);
+      
+      velocity.vx = vHoriz * Math.cos(azRad);
+      velocity.vy = vHoriz * Math.sin(azRad);
+    }
+
+    function createVelocityArrow() {
+      if (velocityArrow) {
+        scene.remove(velocityArrow);
+      }
+      
+      const speed = Math.sqrt(velocity.vx**2 + velocity.vy**2 + velocity.vz**2);
+      if (speed < 0.1) return;
+      
+      const arrowLength = Math.min(speed * 0.5, 15);
+      const direction = new THREE.Vector3(velocity.vx, velocity.vz, velocity.vy).normalize();
+      const origin = new THREE.Vector3(ballPos.x, ballPos.z, ballPos.y);
+      
+      const arrowColor = 0xff00ff;
+      velocityArrow = new THREE.ArrowHelper(direction, origin, arrowLength, arrowColor, arrowLength * 0.2, arrowLength * 0.15);
+      scene.add(velocityArrow);
+    }
+    
+    function onMouseDown(e) {
+      const container = document.getElementById('canvas-container');
+      const rect = container.getBoundingClientRect();
+      
+      mouse.x = ((e.clientX - rect.left) / container.clientWidth) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / container.clientHeight) * 2 + 1;
+      
+      // Check for player intersection
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(draggablePlayers);
+      
+      if (intersects.length > 0) {
+        // We clicked a player
+        isPlayerDragging = true;
+        selectedPlayer = intersects[0].object;
+        
+        // Change color slightly to indicate selection?
+        // selectedPlayer.material.emissive.setHex(0x333333);
+      } else {
+        // We clicked empty space, rotate camera
+        isCameraDragging = true;
+      }
+      
+      previousMousePosition = { x: e.clientX, y: e.clientY };
+    }
+    
+    function onMouseMove(e) {
+      if (isPlayerDragging && selectedPlayer) {
+        const container = document.getElementById('canvas-container');
+        const rect = container.getBoundingClientRect();
+        
+        mouse.x = ((e.clientX - rect.left) / container.clientWidth) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / container.clientHeight) * 2 + 1;
+        
+        raycaster.setFromCamera(mouse, camera);
+        
+        const intersectPoint = new THREE.Vector3();
+        raycaster.ray.intersectPlane(dragPlane, intersectPoint);
+        
+        if (intersectPoint) {
+            // Update player position (keep Y constant at height/2)
+            selectedPlayer.position.set(intersectPoint.x, 1.85 / 2, intersectPoint.z);
+        }
+      } 
+      else if (isCameraDragging) {
+        const deltaX = e.clientX - previousMousePosition.x;
+        const deltaY = e.clientY - previousMousePosition.y;
+        
+        cameraRotation.theta -= deltaX * 0.005;
+        cameraRotation.phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, cameraRotation.phi - deltaY * 0.005));
+        
+        updateCamera();
+      }
+      
+      previousMousePosition = { x: e.clientX, y: e.clientY };
+    }
+    
+    function onMouseUp() {
+      isCameraDragging = false;
+      isPlayerDragging = false;
+      selectedPlayer = null;
+    }
+    
+    function onMouseWheel(e) {
+      e.preventDefault();
+      cameraDistance = Math.max(20, Math.min(150, cameraDistance + e.deltaY * 0.1));
+      updateCamera();
+    }
+
+    function onResize() {
+      const container = document.getElementById('canvas-container');
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    }
+
+    function updateCamera() {
+      if (viewMode === 'first') {
+        const lookAheadDistance = 10;
+        const speed = Math.sqrt(velocity.vx**2 + velocity.vy**2);
+        
+        let dirX = 1;
+        let dirY = 0;
+        
+        if (speed > 0.1) {
+          dirX = velocity.vx / speed;
+          dirY = velocity.vy / speed;
+        }
+
+        camera.position.set(ball.position.x, ball.position.y + 1.5, ball.position.z);
+
+        camera.lookAt(
+          ball.position.x + dirX * lookAheadDistance,
+          ball.position.y + 1.5,
+          ball.position.z + dirY * lookAheadDistance
+        );
+        
+      } else {
+        const x = cameraDistance * Math.sin(cameraRotation.phi) * Math.cos(cameraRotation.theta);
+        const y = cameraDistance * Math.cos(cameraRotation.phi);
+        const z = cameraDistance * Math.sin(cameraRotation.phi) * Math.sin(cameraRotation.theta);
+        
+        camera.position.set(x, y, z);
+        camera.lookAt(0, 0, 0);
+      }
+    }
+
+    function updateBallPosition(x, y, z) {
+      ball.position.set(x, z, y);
+      ballPos = { x, y, z };
+      createVelocityArrow();
+      if (viewMode === 'first') {
+        updateCamera();
+      }
+      simulateTrajectory();
+    }
+
+    function simulateTrajectory() {
+      const trajectory = physics.simulate(
+        ballPos.x, ballPos.y, ballPos.z,
+        velocity.vx, velocity.vy, velocity.vz,
+        spins.sidespin, spins.backspin,
+        DRAG_MULT
+      );
+      
+      trajectoryPoints = trajectory;
+      drawTrajectory();
+    }
+
+    function drawTrajectory() {
+      if (trajectoryLine) {
+        scene.remove(trajectoryLine);
+      }
+      
+      if (trajectoryPoints.length < 2) return;
+      
+      const points = trajectoryPoints.map(p => new THREE.Vector3(p[0], p[2], p[1]));
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const material = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 3 });
+      trajectoryLine = new THREE.Line(geometry, material);
+      scene.add(trajectoryLine);
+    }
+
+    function clearTrajectory() {
+      if (trajectoryLine) {
+        scene.remove(trajectoryLine);
+        trajectoryLine = null;
+      }
+      trajectoryPoints = [];
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+
+    document.querySelectorAll('.view-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        viewMode = e.target.dataset.view;
+        updateCamera();
+      });
+    });
+
+    document.getElementById('x-slider').addEventListener('input', (e) => {
+      const val = Number(e.target.value);
+      document.getElementById('x-value').textContent = val.toFixed(1);
+      updateBallPosition(val, ballPos.y, ballPos.z);
+    });
+
+    document.getElementById('y-slider').addEventListener('input', (e) => {
+      const val = Number(e.target.value);
+      document.getElementById('y-value').textContent = val.toFixed(1);
+      updateBallPosition(ballPos.x, val, ballPos.z);
+    });
+
+    document.getElementById('z-slider').addEventListener('input', (e) => {
+      const val = Number(e.target.value);
+      document.getElementById('z-value').textContent = val.toFixed(1);
+      updateBallPosition(ballPos.x, ballPos.y, val);
+    });
+
+    document.getElementById('speed-slider').addEventListener('input', (e) => {
+      kickParams.speedKmh = Number(e.target.value);
+      document.getElementById('speed-value').textContent = kickParams.speedKmh;
+      updateVelocityFromPolar();
+      createVelocityArrow();
+      simulateTrajectory();
+    });
+
+    document.getElementById('azimuth-slider').addEventListener('input', (e) => {
+      kickParams.azimuth = Number(e.target.value);
+      document.getElementById('azimuth-value').textContent = kickParams.azimuth;
+      updateVelocityFromPolar();
+      createVelocityArrow();
+      simulateTrajectory();
+    });
+
+    document.getElementById('elevation-slider').addEventListener('input', (e) => {
+      kickParams.elevation = Number(e.target.value);
+      document.getElementById('elevation-value').textContent = kickParams.elevation;
+      updateVelocityFromPolar();
+      createVelocityArrow();
+      simulateTrajectory();
+    });
+
+    document.getElementById('sidespin-slider').addEventListener('input', (e) => {
+      spins.sidespin = Number(e.target.value);
+      document.getElementById('sidespin-value').textContent = spins.sidespin;
+      simulateTrajectory();
+    });
+
+    document.getElementById('backspin-slider').addEventListener('input', (e) => {
+      spins.backspin = Number(e.target.value);
+      document.getElementById('backspin-value').textContent = spins.backspin;
+      simulateTrajectory();
+    });
+
+    document.getElementById('clear-btn').addEventListener('click', clearTrajectory);
+
+    init();
+    animate();
+  </script>
+</body>
+</html>
